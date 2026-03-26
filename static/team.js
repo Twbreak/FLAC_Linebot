@@ -408,10 +408,29 @@ async function confirmJoinTeam() {
         
         showToast('🎉 成功加入團隊！', 'success');
         
-        // 移除 URL 參數並重新載入
-        setTimeout(() => {
-            window.location.href = 'team.html';
-        }, 1500);
+        // 檢查使用者是否已加 Bot 為好友
+        try {
+            const friendship = await liff.getFriendship();
+            console.log("好友狀態:", friendship);
+            
+            if (!friendship.friendFlag) {
+                // 使用者尚未加 Bot 為好友，顯示提示
+                setTimeout(() => {
+                    showAddFriendDialog();
+                }, 1500);
+            } else {
+                // 已經是好友，直接重新載入
+                setTimeout(() => {
+                    window.location.href = 'team.html';
+                }, 1500);
+            }
+        } catch (friendshipError) {
+            console.error("檢查好友狀態失敗:", friendshipError);
+            // 如果檢查失敗，還是重新載入頁面
+            setTimeout(() => {
+                window.location.href = 'team.html';
+            }, 1500);
+        }
         
     } catch (error) {
         console.error("加入團隊失敗:", error);
@@ -419,6 +438,84 @@ async function confirmJoinTeam() {
         joinBtn.disabled = false;
         joinBtn.textContent = '✅ 確認加入團隊';
     }
+}
+
+function showAddFriendDialog() {
+    // 建立對話框提示加入 Bot 好友
+    const dialog = document.createElement('div');
+    dialog.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+    dialog.innerHTML = `
+        <div class="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">🤖 加入 Bot 好友</h3>
+            <p class="text-gray-600 mb-4">
+                為了接收團隊通知和使用完整功能，請加入我們的 LINE Bot 為好友！
+            </p>
+            <p class="text-sm text-gray-500 mb-6">
+                ✅ 接收詐騙通報結果<br>
+                ✅ 獲得團隊積分通知<br>
+                ✅ 查看個人儀表板
+            </p>
+            
+            <div class="flex space-x-3">
+                <button 
+                    onclick="addBotFriend()" 
+                    class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition"
+                >
+                    ➕ 加入好友
+                </button>
+                <button 
+                    onclick="skipAddFriend()" 
+                    class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-lg transition"
+                >
+                    稍後再說
+                </button>
+            </div>
+        </div>
+    `;
+    
+    dialog.id = 'add-friend-dialog';
+    document.body.appendChild(dialog);
+}
+
+function addBotFriend() {
+    // 關閉對話框
+    const dialog = document.getElementById('add-friend-dialog');
+    if (dialog) {
+        dialog.remove();
+    }
+    
+    // 開啟加入好友頁面
+    // 注意：這個 URL 需要替換為你的 Bot 的加入好友連結
+    // 格式：https://line.me/R/ti/p/@{your_bot_id}
+    // 你可以在 LINE Developers Console 的 Messaging API 頁面找到這個連結
+    const botAddFriendUrl = "https://line.me/R/ti/p/@your_bot_id"; // 請替換為你的 Bot ID
+    
+    if (liff.isInClient()) {
+        // 在 LINE 內開啟
+        liff.openWindow({
+            url: botAddFriendUrl,
+            external: false
+        });
+    } else {
+        // 在外部瀏覽器開啟
+        window.open(botAddFriendUrl, '_blank');
+    }
+    
+    // 延遲後重新載入頁面
+    setTimeout(() => {
+        window.location.href = 'team.html';
+    }, 2000);
+}
+
+function skipAddFriend() {
+    // 關閉對話框
+    const dialog = document.getElementById('add-friend-dialog');
+    if (dialog) {
+        dialog.remove();
+    }
+    
+    // 重新載入頁面
+    window.location.href = 'team.html';
 }
 
 async function inviteMembers() {

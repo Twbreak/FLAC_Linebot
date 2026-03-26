@@ -3,6 +3,10 @@ import json
 import os
 import re
 from typing import Dict
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv()
 
 BEDROCK_PROMPT = """
 # Role: 專業防詐騙風險評估專員
@@ -53,10 +57,39 @@ def parse_bedrock_response(response_text: str) -> Dict:
     }
     
     try:
-        # 提取風險評分
-        score_match = re.search(r'風險評分[：:]\s*\*?\*?(\d+)', response_text)
-        if score_match:
-            result["risk_score"] = int(score_match.group(1))
+        # 提取風險評分（支援多種格式）
+        # 格式範例：8、8分、8/10、[8]、**8**、** 8 **
+        score_patterns = [
+            r'風險評分[：:]\s*\*?\*?\s*\[?\s*(\d+)\s*\]?\s*(?:分|/10)?',  # 主要格式
+            r'\*\*風險評分[：:]\*\*\s*(\d+)',  # Markdown 粗體格式
+            r'風險評分.*?(\d+)',  # 備用：任何包含數字的格式
+        ]
+        
+        score_found = False
+        for pattern in score_patterns:
+            score_match = re.search(pattern, response_text)
+            if score_match:
+                score = int(score_match.group(1))
+                # 確保分數在 0-10 範圍內
+                result["risk_score"] = max(0, min(10, score))
+                print(f"[Bedrock 解析] 成功提取風險評分: {result['risk_score']} (使用模式: {pattern})")
+                score_found = True
+                break
+        
+        if not score_found:
+            # 如果找不到明確的風險評分，嘗試從內容推斷
+            # 檢查是否包含高風險關鍵字
+            high_risk_keywords = ['極高風險', '高風險', '詐騙', '假投資', '假檢警', '假交友']
+            medium_risk_keywords = ['中風險', '可疑', '需注意']
+            
+            content_lower = response_text.lower()
+            if any(keyword in response_text for keyword in high_risk_keywords):
+                # 如果內容提到高風險但沒有明確分數，給予 7 分
+                result["risk_score"] = 7
+                print(f"警告：未找到明確風險評分，根據關鍵字推斷為 7 分")
+            elif any(keyword in response_text for keyword in medium_risk_keywords):
+                result["risk_score"] = 5
+                print(f"警告：未找到明確風險評分，根據關鍵字推斷為 5 分")
         
         # 提取詐騙類別
         category_match = re.search(r'詐騙類別[：:]\s*\*?\*?([^\n]+)', response_text)
@@ -75,6 +108,9 @@ def parse_bedrock_response(response_text: str) -> Dict:
         warning_match = re.search(r'專員警示[：:]\s*\*?\*?([^\n]+)', response_text)
         if warning_match:
             result["expert_warning"] = warning_match.group(1).strip()
+        
+        # 除錯輸出
+        print(f"[Bedrock 解析] 風險評分: {result['risk_score']}, 類別: {result['category']}")
             
     except Exception as e:
         print(f"解析錯誤: {e}")

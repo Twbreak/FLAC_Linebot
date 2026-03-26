@@ -1,3 +1,12 @@
 .env
 __pycache__/
 .venv/
+*.pyc
+scam_detection_db.json
+.DS_Store
+.pytest_cache/
+.vscode
+
+# Keep .kiro folder but ignore some files
+.kiro/settings/
+.kiro/hooks/
