@@ -27,6 +27,7 @@ from team_service import TeamService
 from mass_report_service import process_mass_report
 from app_logging import setup_logging
 from security import RateLimiter, validate_line_channel_access_token
+from scam_enrichment_service import AlertFormatter, ScamCategoryEnricher
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 # 初始化團隊服務
 team_service = TeamService()
+category_enricher = ScamCategoryEnricher()
 
 # ==================== 靜態網頁路由 ====================
 
@@ -603,6 +605,7 @@ def handle_text(event):
     
     # 使用 Bedrock 分析詐騙風險
     analysis_result = analyze_scam_content(user_text)
+    analysis_result['category_alert'] = get_category_alert(analysis_result.get('category'))
     
     # 儲存到資料庫
     record = ScamDetectionRecord(
@@ -839,11 +842,20 @@ def reply_message(token: str, text: str):
             )
         )
 
+def get_category_alert(category: str) -> dict | None:
+    """根據詐騙類別補充統計資訊與案例，失敗時不影響主流程。"""
+    try:
+        return category_enricher.build_category_alert(category)
+    except Exception as e:
+        logger.exception("Category enrichment failed: category=%s error=%s", category, e)
+        return None
+
 def format_reply_message(analysis: dict, has_team: bool = False, team_points_eligible: bool = False) -> str:
     """格式化回覆訊息"""
     score = analysis['risk_score']
     category = analysis['category']
     warning = analysis['expert_warning']
+    category_alert_block = AlertFormatter.format_category_alert_block(analysis.get('category_alert'))
     
     # 風險等級表情符號
     if score >= 7:
@@ -862,7 +874,7 @@ def format_reply_message(analysis: dict, has_team: bool = False, team_points_eli
 詐騙類別：{category}
 
 💡 專員警示：
-{warning}"""
+{warning}{category_alert_block}"""
 
     if has_team and not team_points_eligible:
         reply += """
@@ -897,6 +909,7 @@ def format_reply_with_team_points(analysis: dict, team_result: dict) -> str:
     score = analysis['risk_score']
     category = analysis['category']
     warning = analysis['expert_warning']
+    category_alert_block = AlertFormatter.format_category_alert_block(analysis.get('category_alert'))
     
     # 風險等級表情符號
     if score >= 7:
@@ -916,7 +929,7 @@ def format_reply_with_team_points(analysis: dict, team_result: dict) -> str:
 詐騙類別：{category}
 
 💡 專員警示：
-{warning}
+{warning}{category_alert_block}
 """
     
     # 加入團隊積分資訊
