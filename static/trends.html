@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>詐騙趨勢地圖 - Scam Hero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .risk-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, #10b981, #f59e0b, #ef4444);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-2 sm:p-5">
+
+    <!-- Loading 畫面 -->
+    <div id="loading-screen" class="fixed inset-0 bg-white z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="loading-spinner"></div>
+            <p class="mt-4 text-gray-600">載入趨勢資料中...</p>
+        </div>
+    </div>
+
+    <!-- 主要內容 -->
+    <div id="main-content" class="hidden">
+        <div class="bg-white shadow-lg rounded-2xl p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            
+            <!-- 標題 -->
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-2xl font-bold text-red-600">🗺️ 詐騙趨勢地圖</h1>
+                <a href="index.html" class="text-sm text-gray-500 hover:text-gray-700">
+                    ← 返回儀表板
+                </a>
+            </div>
+
+            <!-- 說明 -->
+            <div class="bg-gradient-to-r from-red-50 to-orange-50 rounded-xl p-4 mb-6 border border-red-100">
+                <p class="text-sm text-gray-700">
+                    📊 即時追蹤最常被通報的詐騙網域
+                    <br>
+                    <span class="text-xs text-gray-500">資料來源：所有使用者的詐騙通報記錄</span>
+                </p>
+            </div>
+
+            <!-- 統計摘要 -->
+            <div id="stats-summary" class="hidden grid grid-cols-3 gap-4 mb-6">
+                <div class="text-center p-3 bg-gray-50 rounded-xl">
+                    <p class="text-gray-500 text-xs uppercase font-bold">總網域數</p>
+                    <p id="total-domains" class="text-3xl font-black text-blue-500">0</p>
+                </div>
+                <div class="text-center p-3 bg-red-50 rounded-xl border border-red-100">
+                    <p class="text-gray-500 text-xs uppercase font-bold">總通報次數</p>
+                    <p id="total-reports" class="text-3xl font-black text-red-500">0</p>
+                </div>
+                <div class="text-center p-3 bg-orange-50 rounded-xl border border-orange-100">
+                    <p class="text-gray-500 text-xs uppercase font-bold">平均風險</p>
+                    <p id="avg-risk" class="text-3xl font-black text-orange-500">0</p>
+                </div>
+            </div>
+
+            <!-- 趨勢列表 -->
+            <div id="trends-loading" class="text-center py-12">
+                <div class="loading-spinner"></div>
+                <p class="text-gray-500 mt-2">載入趨勢資料中...</p>
+            </div>
+
+            <div id="trends-list" class="hidden fade-in">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">🔥 熱門詐騙網域 TOP 20</h2>
+                <div id="domains-container" class="space-y-3">
+                    <!-- 網域項目將由 JavaScript 動態生成 -->
+                </div>
+            </div>
+
+            <!-- 空狀態 -->
+            <div id="empty-state" class="hidden text-center py-12">
+                <div class="text-6xl mb-4">📭</div>
+                <p class="text-gray-500">目前還沒有詐騙通報資料</p>
+                <p class="text-sm text-gray-400 mt-2">開始通報詐騙內容來建立趨勢地圖！</p>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="/static/trends.js?v=1.0"></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>團隊排行榜 - Scam Hero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .rank-badge {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50%;
+        }
+        .rank-1 { background: linear-gradient(135deg, #FFD700, #FFA500); color: white; }
+        .rank-2 { background: linear-gradient(135deg, #C0C0C0, #808080); color: white; }
+        .rank-3 { background: linear-gradient(135deg, #CD7F32, #8B4513); color: white; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-2 sm:p-5">
+
+    <!-- Loading 畫面 -->
+    <div id="loading-screen" class="fixed inset-0 bg-white z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="loading-spinner"></div>
+            <p class="mt-4 text-gray-600">載入排行榜中...</p>
+        </div>
+    </div>
+
+    <!-- 主要內容 -->
+    <div id="main-content" class="hidden">
+        <div class="bg-white shadow-lg rounded-2xl p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            
+            <!-- 標題 -->
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-2xl font-bold text-yellow-600">🏆 團隊排行榜</h1>
+                <a href="index.html" class="text-sm text-gray-500 hover:text-gray-700">
+                    ← 返回儀表板
+                </a>
+            </div>
+
+            <!-- 排行榜說明 -->
+            <div class="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-4 mb-6 border border-yellow-100">
+                <p class="text-sm text-gray-700">
+                    🎯 通報詐騙累積團隊積分，爭奪排行榜冠軍！
+                    <br>
+                    <span class="text-xs text-gray-500">極高風險通報可獲得 2x 倍數獎勵</span>
+                </p>
+            </div>
+
+            <!-- 排行榜列表 -->
+            <div id="leaderboard-loading" class="text-center py-12">
+                <div class="loading-spinner"></div>
+                <p class="text-gray-500 mt-2">載入排行榜資料中...</p>
+            </div>
+
+            <div id="leaderboard-list" class="hidden space-y-4 fade-in">
+                <!-- 排行榜項目將由 JavaScript 動態生成 -->
+            </div>
+
+            <!-- 空狀態 -->
+            <div id="empty-state" class="hidden text-center py-12">
+                <div class="text-6xl mb-4">📭</div>
+                <p class="text-gray-500">目前還沒有團隊</p>
+                <p class="text-sm text-gray-400 mt-2">快去建立你的團隊吧！</p>
+                <a href="team.html" class="inline-block mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg transition">
+                    建立團隊
+                </a>
+            </div>
+
+            <!-- 前往團隊管理 -->
+            <div class="mt-8 text-center">
+                <a href="team.html" class="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition shadow-md">
+                    👥 管理我的團隊
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/team-leaderboard.js?v=1.0"></script>
+</body>
+</html>

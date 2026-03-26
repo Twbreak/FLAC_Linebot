@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scam Hero Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        .table-container {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .full-display-cell {
+            word-break: break-word;
+            white-space: normal;
+            min-width: 160px;
+            vertical-align: top;
+        }
+        td {
+            vertical-align: top !important;
+        }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-2 sm:p-5">
+
+    <!-- Loading 畫面 -->
+    <div id="loading-screen" class="fixed inset-0 bg-white z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="loading-spinner"></div>
+            <p class="mt-4 text-gray-600">正在初始化 LIFF...</p>
+        </div>
+    </div>
+
+    <!-- 錯誤訊息 -->
+    <div id="error-screen" class="hidden fixed inset-0 bg-white z-50 flex items-center justify-center p-4">
+        <div class="text-center max-w-md">
+            <div class="text-6xl mb-4">⚠️</div>
+            <h2 class="text-xl font-bold text-red-600 mb-2">無法初始化 LIFF</h2>
+            <p id="error-message" class="text-gray-600 mb-4"></p>
+            <button onclick="location.reload()" class="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600">
+                重新載入
+            </button>
+        </div>
+    </div>
+
+    <!-- 主要內容 -->
+    <div id="main-content" class="hidden">
+        <div class="bg-white shadow-lg rounded-2xl p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            <h1 class="text-2xl font-bold text-blue-600 mb-4 text-center">Scam Hero Dashboard</h1>
+            
+            <div id="user-info" class="flex items-center space-x-4 mb-6 p-3 bg-blue-50 rounded-lg">
+                <img id="user-avatar" class="w-16 h-16 rounded-full border-2 border-blue-200" src="" alt="Avatar">
+                <div>
+                    <p class="text-gray-500 text-sm">Welcome back,</p>
+                    <p id="user-name" class="font-bold text-lg text-gray-800">Loading...</p>
+                    <p id="display-user-id" class="text-[10px] text-gray-400 font-mono"></p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-8">
+                <div class="text-center p-3 bg-gray-50 rounded-xl">
+                    <p class="text-gray-500 text-xs uppercase font-bold">Total Scams</p>
+                    <p id="user-score" class="text-3xl font-black text-blue-500">0</p>
+                </div>
+                <div class="text-center p-3 bg-yellow-50 rounded-xl border border-yellow-100">
+                    <p class="text-gray-500 text-xs uppercase font-bold">Total Points</p>
+                    <p id="total-points" class="text-3xl font-black text-yellow-500">0</p>
+                </div>
+                <div class="text-center p-3 bg-green-50 rounded-xl border border-green-100">
+                    <p class="text-gray-500 text-xs uppercase font-bold">Coupons</p>
+                    <p id="coupon-count" class="text-3xl font-black text-green-500">0</p>
+                </div>
+            </div>
+            
+            <div class="text-right mb-2">
+                <a href="team.html" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+                    👥 我的團隊
+                </a>
+                <a href="team-leaderboard.html" class="text-sm bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+                    🏆 團隊排行榜
+                </a>
+                <a href="leaderboard.html" class="text-sm bg-green-400 hover:bg-green-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+                    📊 個人排行榜
+                </a>
+                <a href="trends.html" class="text-sm bg-red-400 hover:bg-red-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm">
+                    🗺️ 趨勢地圖
+                </a>
+            </div>
+
+            <div class="space-y-4">
+                <h2 class="font-bold text-gray-700 border-b pb-2">Detection History Table</h2>
+                
+                <div class="table-container border rounded-xl">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm text-left">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 font-bold text-gray-600">Timestamp</th>
+                                <th class="px-4 py-3 font-bold text-gray-600">Category</th>
+                                <th class="px-4 py-3 font-bold text-gray-600">Content</th>
+                                <th class="px-4 py-3 font-bold text-gray-600">Score</th>
+                                <th class="px-4 py-3 font-bold text-gray-600">Analysis</th>
+                                <th class="px-4 py-3 font-bold text-gray-600">Warning</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body" class="bg-white divide-y divide-gray-100">
+                            <tr>
+                                <td colspan="6" class="px-4 py-10 text-center text-gray-400">
+                                    <div class="loading-spinner"></div>
+                                    <p class="mt-2">Syncing data from database...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <button onclick="handleLogout()" class="mt-8 w-full py-2 text-sm text-red-400 hover:text-red-600 transition">
+                🚪 Log Out Account
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ 重要：請將此 LIFF ID 替換為你在 LINE Developers Console 建立的 LIFF ID
+        const LIFF_ID = "2009609029-RlBZuNs2";
+
+        async function initializeLiff() {
+            try {
+                console.log("正在初始化 LIFF...");
+                await liff.init({ liffId: LIFF_ID });
+                
+                console.log("LIFF 初始化成功");
+                console.log("登入狀態:", liff.isLoggedIn());
+                console.log("在 LINE 內開啟:", liff.isInClient());
+                
+                if (!liff.isLoggedIn()) {
+                    console.log("使用者未登入，導向登入頁面");
+                    liff.login();
+                } else {
+                    console.log("使用者已登入，取得個人資料");
+                    await loadUserProfile();
+                }
+            } catch (error) {
+                console.error("LIFF 初始化失敗:", error);
+                showError(error);
+            }
+        }
+
+        async function loadUserProfile() {
+            try {
+                const profile = await liff.getProfile();
+                console.log("使用者資料:", profile);
+                
+                // 顯示使用者資訊
+                document.getElementById('user-avatar').src = profile.pictureUrl || 'https://via.placeholder.com/64';
+                document.getElementById('user-name').textContent = profile.displayName;
+                document.getElementById('display-user-id').textContent = `ID: ${profile.userId}`;
+                
+                // 載入歷史記錄
+                await fetchHistory(profile.userId);
+                
+                // 隱藏 loading，顯示主要內容
+                document.getElementById('loading-screen').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                
+            } catch (error) {
+                console.error("無法取得使用者資料:", error);
+                showError(error);
+            }
+        }
+
+        async function fetchHistory(userId) {
+            try {
+                console.log(`正在取得使用者 ${userId} 的歷史記錄...`);
+                const response = await fetch(`/api/history/${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log(`取得 ${data.length} 筆記錄`);
+                
+                const tableBody = document.getElementById('history-table-body');
+                tableBody.innerHTML = ''; 
+
+                if (data.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400">📭 尚無偵測記錄<br><small class="text-xs">傳送訊息給 Bot 開始使用</small></td></tr>';
+                    return;
+                }
+
+                let totalPoints = 0;
+                let coupons = 0;
+
+                data.forEach(item => {
+                    const score = parseInt(item.risk_score) || 0;
+                    totalPoints += score;
+                    if (score >= 8) {
+                        coupons += 1;
+                    }
+
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-blue-50/50 transition-colors";
+                    const scoreColor = score >= 7 ? 'text-red-600' : (score >= 4 ? 'text-orange-500' : 'text-green-600');
+                    let analysisText = Array.isArray(item.analysis) ? item.analysis.join('; ') : (item.analysis || 'N/A');
+
+                    row.innerHTML = `
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-500 text-[11px]">
+                            ${new Date(item.created_at || item.timestamp).toLocaleString('zh-TW')}
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] bg-white border font-medium">${item.category || 'Uncategorized'}</span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-700 text-xs leading-relaxed full-display-cell">
+                            ${escapeHtml(item.input_content || 'Image/File')}
+                        </td>
+                        <td class="px-4 py-3 font-black ${scoreColor} whitespace-nowrap">
+                            ${score}/10
+                        </td>
+                        <td class="px-4 py-3 text-gray-600 text-[11px] leading-relaxed full-display-cell">
+                            ${escapeHtml(analysisText)}
+                        </td>
+                        <td class="px-4 py-3 text-gray-600 text-[11px] leading-relaxed full-display-cell">
+                            ${escapeHtml(item.expert_warning || 'None')}
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+
+                document.getElementById('user-score').textContent = data.length;
+                document.getElementById('total-points').textContent = totalPoints;
+                document.getElementById('coupon-count').textContent = coupons;
+
+            } catch (error) {
+                console.error("無法取得歷史記錄:", error);
+                document.getElementById('history-table-body').innerHTML = 
+                    '<tr><td colspan="6" class="px-4 py-10 text-center text-red-400">❌ 連線錯誤<br><small class="text-xs">' + error.message + '</small></td></tr>';
+            }
+        }
+
+        function handleLogout() {
+            if (confirm('確定要登出嗎？')) {
+                liff.logout();
+                location.reload();
+            }
+        }
+
+        function showError(error) {
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('error-screen').classList.remove('hidden');
+            
+            let errorMsg = "請確認：\n";
+            errorMsg += "1. LIFF ID 是否正確\n";
+            errorMsg += "2. LIFF Endpoint URL 是否正確\n";
+            errorMsg += "3. 是否在 LINE 內開啟或已授權\n\n";
+            errorMsg += "錯誤詳情：" + (error.message || error);
+            
+            document.getElementById('error-message').textContent = errorMsg;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 啟動 LIFF
+        initializeLiff();
+    </script>
+</body>
+</html>
