@@ -282,6 +282,17 @@ def create_team_tables_if_not_exist():
                 }
             ]
         },
+        # ScamCategoryStatsCache Table
+        {
+            'name': 'ScamCategoryStatsCache',
+            'key_schema': [
+                {'AttributeName': 'cache_key', 'KeyType': 'HASH'}
+            ],
+            'attribute_definitions': [
+                {'AttributeName': 'cache_key', 'AttributeType': 'S'}
+            ],
+            'gsi': []
+        },
         # ScamReports Table
         {
             'name': 'ScamReports',
