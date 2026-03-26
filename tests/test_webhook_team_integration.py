@@ -11,7 +11,13 @@ import os
 # 將專案根目錄加入 Python 路徑
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from main import update_team_points_for_report, format_reply_with_team_points
+from main import (
+    update_team_points_for_report,
+    format_reply_with_team_points,
+    build_mass_report_context,
+    handle_text,
+    trigger_mass_report_check,
+)
 
 
 class TestWebhookTeamIntegration:
@@ -338,6 +344,138 @@ class TestWebhookTeamIntegration:
         
         # 驗證 check_daily_quest 被呼叫
         mock_calculator.check_daily_quest.assert_called_once_with(team_id='team123')
+
+    def test_build_mass_report_context_uses_team_report_when_report_saved(self):
+        """測試團隊通報成功寫入時直接沿用 normalized_url"""
+        context = build_mass_report_context(
+            reporter_uid='U1234567890',
+            url='https://scam-site.com/fake',
+            risk_score=7,
+            category='假投資詐騙',
+            team_result={
+                'report_id': 'U123#2024-01-01T00:00:00',
+                'normalized_url': 'https://scam-site.com/fake',
+                'is_duplicate': False
+            }
+        )
+
+        assert context == {'normalized_url': 'https://scam-site.com/fake'}
+
+    @patch('main.save_scam_report')
+    @patch('points_calculator.PointsCalculator')
+    def test_build_mass_report_context_saves_non_team_report(self, mock_calculator_class, mock_save_report):
+        """測試非團隊使用者仍會寫入 ScamReports 並建立 mass report context"""
+        mock_calculator = Mock()
+        mock_calculator.normalize_url.return_value = 'https://scam-site.com/fake'
+        mock_calculator_class.return_value = mock_calculator
+
+        context = build_mass_report_context(
+            reporter_uid='U1234567890',
+            url='https://scam-site.com/fake?ref=1',
+            risk_score=8,
+            category='假投資詐騙',
+            team_result=None
+        )
+
+        assert context == {'normalized_url': 'https://scam-site.com/fake'}
+        mock_save_report.assert_called_once_with(
+            reporter_uid='U1234567890',
+            url='https://scam-site.com/fake?ref=1',
+            normalized_url='https://scam-site.com/fake',
+            risk_score=8,
+            category='假投資詐騙'
+        )
+
+    @patch('main.threading.Thread')
+    @patch('main.process_mass_report')
+    @patch('main.get_report_count')
+    def test_trigger_mass_report_check_runs_in_background(self, mock_get_report_count, mock_process_mass_report, mock_thread):
+        """測試大量通報檢查以背景執行方式觸發"""
+        mock_get_report_count.return_value = 11
+
+        thread_target = None
+
+        def capture_thread(*args, **kwargs):
+            nonlocal thread_target
+            thread_target = kwargs['target']
+            thread = Mock()
+            thread.start.side_effect = lambda: thread_target()
+            return thread
+
+        mock_thread.side_effect = capture_thread
+
+        trigger_mass_report_check('https://scam-site.com/fake')
+
+        mock_get_report_count.assert_called_once_with('https://scam-site.com/fake')
+        mock_process_mass_report.assert_called_once_with(
+            normalized_url='https://scam-site.com/fake',
+            current_report_count=11
+        )
+
+    @patch('main.reply_message')
+    @patch('main.trigger_mass_report_check')
+    @patch('main.build_mass_report_context')
+    @patch('main.update_team_points_for_report')
+    @patch('main.add_detection_record')
+    @patch('main.analyze_scam_content')
+    def test_handle_text_replies_before_triggering_mass_report(
+        self,
+        mock_analyze,
+        mock_add_detection_record,
+        mock_update_team_points,
+        mock_build_context,
+        mock_trigger_mass_report_check,
+        mock_reply_message
+    ):
+        """測試使用者先收到標準回覆，再觸發大量通報背景檢查"""
+        mock_analyze.return_value = {
+            'risk_score': 8,
+            'category': '假投資詐騙',
+            'analysis': ['測試分析'],
+            'expert_warning': '請勿點擊連結'
+        }
+        mock_update_team_points.return_value = {
+            'success': True,
+            'points_earned': 8,
+            'multiplier_applied': False
+        }
+        mock_build_context.return_value = {'normalized_url': 'https://scam-site.com/fake'}
+
+        call_order = []
+        mock_reply_message.side_effect = lambda *args, **kwargs: call_order.append('reply')
+        mock_trigger_mass_report_check.side_effect = lambda *args, **kwargs: call_order.append('trigger')
+
+        event = Mock()
+        event.message.text = '請幫我看 https://scam-site.com/fake'
+        event.source.user_id = 'U1234567890'
+        event.reply_token = 'reply-token'
+
+        handle_text(event)
+
+        assert call_order == ['reply', 'trigger']
+        mock_trigger_mass_report_check.assert_called_once_with(normalized_url='https://scam-site.com/fake')
+
+    @patch('main.reply_message')
+    @patch('main.rate_limiter')
+    @patch('main.analyze_scam_content')
+    def test_handle_text_rejects_when_rate_limit_exceeded(
+        self,
+        mock_analyze,
+        mock_rate_limiter,
+        mock_reply_message
+    ):
+        """測試超過 rate limit 時會立即回覆且不進入分析流程"""
+        mock_rate_limiter.allow_request.return_value = False
+
+        event = Mock()
+        event.message.text = 'https://scam-site.com/fake'
+        event.source.user_id = 'U1234567890'
+        event.reply_token = 'reply-token'
+
+        handle_text(event)
+
+        mock_reply_message.assert_called_once()
+        mock_analyze.assert_not_called()
 
 
 if __name__ == '__main__':

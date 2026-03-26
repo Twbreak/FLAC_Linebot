@@ -105,15 +105,20 @@ def test_domain_trends_basic(cleanup_reports, reports_table):
 
 def test_domain_trends_ordering(cleanup_reports, reports_table):
     """測試網域依通報次數降序排序"""
-    # 建立測試通報資料（domain-a 有 3 則，domain-b 有 2 則，domain-c 有 1 則）
+    domain_suffix = uuid.uuid4().hex[:8]
+    domain_a = f'domain-a-{domain_suffix}.com'
+    domain_b = f'domain-b-{domain_suffix}.com'
+    domain_c = f'domain-c-{domain_suffix}.com'
+
+    # 建立測試通報資料，使用較大的通報量避免被共享資料擠出前 10 名
     test_reports = []
     
-    # domain-a.com: 3 則通報
-    for i in range(3):
+    # domain-a: 30 則通報
+    for i in range(30):
         test_reports.append({
             'report_id': str(uuid.uuid4()),
-            'url': f'https://domain-a.com/page{i}',
-            'normalized_url': f'https://domain-a.com/page{i}',
+            'url': f'https://{domain_a}/page{i}',
+            'normalized_url': f'https://{domain_a}/page{i}',
             'reporter_uid': f'U{i}',
             'risk_score': 9,
             'category': 'phishing',
@@ -121,12 +126,12 @@ def test_domain_trends_ordering(cleanup_reports, reports_table):
             'reported_at': datetime.utcnow().isoformat()
         })
     
-    # domain-b.com: 2 則通報
-    for i in range(2):
+    # domain-b: 20 則通報
+    for i in range(20):
         test_reports.append({
             'report_id': str(uuid.uuid4()),
-            'url': f'https://domain-b.com/page{i}',
-            'normalized_url': f'https://domain-b.com/page{i}',
+            'url': f'https://{domain_b}/page{i}',
+            'normalized_url': f'https://{domain_b}/page{i}',
             'reporter_uid': f'U{i+10}',
             'risk_score': 8,
             'category': 'fraud',
@@ -134,17 +139,18 @@ def test_domain_trends_ordering(cleanup_reports, reports_table):
             'reported_at': datetime.utcnow().isoformat()
         })
     
-    # domain-c.com: 1 則通報
-    test_reports.append({
-        'report_id': str(uuid.uuid4()),
-        'url': 'https://domain-c.com/page',
-        'normalized_url': 'https://domain-c.com/page',
-        'reporter_uid': 'U20',
-        'risk_score': 7,
-        'category': 'scam',
-        'points_earned': 10,
-        'reported_at': datetime.utcnow().isoformat()
-    })
+    # domain-c: 10 則通報
+    for i in range(10):
+        test_reports.append({
+            'report_id': str(uuid.uuid4()),
+            'url': f'https://{domain_c}/page{i}',
+            'normalized_url': f'https://{domain_c}/page{i}',
+            'reporter_uid': f'U{i+40}',
+            'risk_score': 7,
+            'category': 'scam',
+            'points_earned': 10,
+            'reported_at': datetime.utcnow().isoformat()
+        })
     
     # 寫入測試資料
     for report in test_reports:
@@ -159,16 +165,16 @@ def test_domain_trends_ordering(cleanup_reports, reports_table):
     data = response.json()
     
     # 找出我們的測試網域
-    test_domains = [d for d in data['domains'] if d['domain'] in ['domain-a.com', 'domain-b.com', 'domain-c.com']]
+    test_domains = [d for d in data['domains'] if d['domain'] in [domain_a, domain_b, domain_c]]
     
     # 驗證排序（通報次數應該遞減）
     assert len(test_domains) == 3
-    assert test_domains[0]['domain'] == 'domain-a.com'
-    assert test_domains[0]['report_count'] == 3
-    assert test_domains[1]['domain'] == 'domain-b.com'
-    assert test_domains[1]['report_count'] == 2
-    assert test_domains[2]['domain'] == 'domain-c.com'
-    assert test_domains[2]['report_count'] == 1
+    assert test_domains[0]['domain'] == domain_a
+    assert test_domains[0]['report_count'] == 30
+    assert test_domains[1]['domain'] == domain_b
+    assert test_domains[1]['report_count'] == 20
+    assert test_domains[2]['domain'] == domain_c
+    assert test_domains[2]['report_count'] == 10
 
 
 def test_domain_trends_www_removal(cleanup_reports, reports_table):

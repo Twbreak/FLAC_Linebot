@@ -1,10 +1,14 @@
 import boto3
 import os
+import time
+import logging
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Set
 from decimal import Decimal
 from dotenv import load_dotenv
 from models import ScamDetectionRecord, UserHistory, LeaderboardEntry
+
+logger = logging.getLogger(__name__)
 
 # 載入環境變數
 load_dotenv()
@@ -27,13 +31,22 @@ if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
         "  - AWS_REGION=us-east-1"
     )
 
+def get_dynamodb_resource():
+    """依目前環境變數取得 DynamoDB resource。"""
+    aws_region = os.getenv("AWS_REGION", "us-east-1")
+    aws_access_key_id = os.getenv("aws_access_key_id") or os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_access_key = os.getenv("aws_secret_access_key") or os.getenv("AWS_SECRET_ACCESS_KEY")
+
+    return boto3.resource(
+        'dynamodb',
+        region_name=aws_region,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key
+    )
+
+
 # 初始化 DynamoDB client
-dynamodb = boto3.resource(
-    'dynamodb',
-    region_name=AWS_REGION,
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
-)
+dynamodb = get_dynamodb_resource()
 
 def get_table():
     """取得 DynamoDB table"""
@@ -346,3 +359,157 @@ def create_team_tables_if_not_exist():
             return False
     
     return True
+def create_mass_report_alerts_table():
+    """建立 MassReportAlerts DynamoDB 資料表"""
+    table_name = 'MassReportAlerts'
+
+    try:
+        # 檢查 table 是否存在
+        table = dynamodb.Table(table_name)
+        table.load()
+        print(f"✅ DynamoDB table '{table_name}' 已存在")
+        return True
+    except dynamodb.meta.client.exceptions.ResourceNotFoundException:
+        print(f"⚠️  DynamoDB table '{table_name}' 不存在，正在建立...")
+
+        # 建立 table
+        table = dynamodb.create_table(
+            TableName=table_name,
+            KeySchema=[
+                {
+                    'AttributeName': 'alert_id',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            AttributeDefinitions=[
+                {
+                    'AttributeName': 'alert_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'normalized_url',
+                    'AttributeType': 'S'
+                }
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'NormalizedUrlIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'normalized_url',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    },
+                    'ProvisionedThroughput': {
+                        'ReadCapacityUnits': 5,
+                        'WriteCapacityUnits': 5
+                    }
+                }
+            ],
+            ProvisionedThroughput={
+                'ReadCapacityUnits': 5,
+                'WriteCapacityUnits': 5
+            }
+        )
+
+        # 等待 table 建立完成
+        print(f"⏳ 等待 table '{table_name}' 建立完成...")
+        table.wait_until_exists()
+        print(f"✅ DynamoDB table '{table_name}' 建立成功！")
+        return True
+    except Exception as e:
+        print(f"❌ 建立 DynamoDB table '{table_name}' 失敗: {e}")
+        return False
+
+
+def retry_database_write(operation, max_retries: int = 3, base_delay: float = 0.1):
+    """對 DynamoDB 寫入操作進行指數退避重試。"""
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            logger.error(
+                "Database write failed: attempt=%s max_retries=%s error=%s",
+                attempt + 1,
+                max_retries,
+                exc,
+            )
+            if attempt == max_retries - 1:
+                break
+            time.sleep(base_delay * (2 ** attempt))
+
+    raise last_error
+
+
+def _scan_all_items(table) -> List[Dict]:
+    """掃描整張 DynamoDB 資料表並處理分頁。"""
+    response = table.scan()
+    items = response.get('Items', [])
+
+    while 'LastEvaluatedKey' in response:
+        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+        items.extend(response.get('Items', []))
+
+    return items
+
+
+def _collect_valid_line_uids(items: List[Dict], field_name: str) -> Set[str]:
+    """從資料列中擷取有效的 LINE UID。"""
+    valid_uids = set()
+
+    for item in items:
+        user_id = item.get(field_name)
+        if isinstance(user_id, str) and user_id.startswith('U'):
+            valid_uids.add(user_id)
+
+    return valid_uids
+
+
+def get_all_active_user_ids(scam_reports_table=None, team_members_table=None) -> List[str]:
+    """取得所有活躍使用者的 LINE UID。"""
+    if scam_reports_table is None:
+        scam_reports_table = dynamodb.Table('ScamReports')
+    if team_members_table is None:
+        team_members_table = dynamodb.Table('TeamMembers')
+
+    active_users = set()
+    active_users.update(
+        _collect_valid_line_uids(_scan_all_items(scam_reports_table), 'reporter_uid')
+    )
+    active_users.update(
+        _collect_valid_line_uids(_scan_all_items(team_members_table), 'line_uid')
+    )
+
+    return sorted(active_users)
+
+
+def get_report_count(normalized_url: str, scam_reports_table=None) -> int:
+    """查詢指定 normalized_url 的通報數量。"""
+    table = scam_reports_table or dynamodb.Table('ScamReports')
+
+    response = table.query(
+        IndexName='NormalizedUrlIndex',
+        KeyConditionExpression='normalized_url = :url',
+        ExpressionAttributeValues={':url': normalized_url},
+        Select='COUNT'
+    )
+
+    report_count = response.get('Count', 0)
+
+    while 'LastEvaluatedKey' in response:
+        response = table.query(
+            IndexName='NormalizedUrlIndex',
+            KeyConditionExpression='normalized_url = :url',
+            ExpressionAttributeValues={':url': normalized_url},
+            Select='COUNT',
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        report_count += response.get('Count', 0)
+
+    return report_count

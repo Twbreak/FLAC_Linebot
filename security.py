@@ -7,6 +7,8 @@
 import hmac
 import hashlib
 import os
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, UTC
 from dotenv import load_dotenv
 
 # 載入環境變數
@@ -71,3 +73,44 @@ class SecurityService:
         expected_signature = self.generate_signature(team_id)
         # 使用 compare_digest 防止時序攻擊（timing attack）
         return hmac.compare_digest(expected_signature, signature)
+
+
+def validate_line_channel_access_token(token: str) -> str:
+    """驗證 LINE Channel Access Token 必須來自環境變數且不可為占位值。"""
+    invalid_placeholders = {
+        "",
+        "YOUR_CHANNEL_ACCESS_TOKEN",
+        "your-channel-access-token",
+        "LINE_CHANNEL_ACCESS_TOKEN",
+        "test-token",
+    }
+
+    normalized = (token or "").strip()
+    if normalized in invalid_placeholders:
+        raise ValueError("LINE_CHANNEL_ACCESS_TOKEN is missing or appears to be hardcoded/placeholder text")
+
+    return normalized
+
+
+class RateLimiter:
+    """簡單的使用者請求速率限制器。"""
+
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._requests = defaultdict(deque)
+
+    def allow_request(self, user_id: str, now: datetime | None = None) -> bool:
+        """檢查指定使用者是否仍可在時間窗口內送出請求。"""
+        current_time = now or datetime.now(UTC)
+        window_start = current_time - timedelta(seconds=self.window_seconds)
+        requests = self._requests[user_id]
+
+        while requests and requests[0] <= window_start:
+            requests.popleft()
+
+        if len(requests) >= self.max_requests:
+            return False
+
+        requests.append(current_time)
+        return True

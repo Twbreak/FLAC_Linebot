@@ -1,5 +1,8 @@
 import base64
 import re
+import threading
+import logging
+from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -18,17 +21,23 @@ from collections import defaultdict
 
 # 匯入自定義模組
 from models import ScamDetectionRecord, UserHistory, LeaderboardEntry, CreateTeamRequest, JoinTeamRequest
-from database import add_detection_record, get_user_history, get_leaderboard, create_table_if_not_exists, create_team_tables_if_not_exist
+from database import add_detection_record, get_user_history, get_leaderboard, create_table_if_not_exists, create_team_tables_if_not_exist, get_report_count, dynamodb
 from bedrock_service import analyze_scam_content
 from team_service import TeamService
+from mass_report_service import process_mass_report
+from app_logging import setup_logging
+from security import RateLimiter, validate_line_channel_access_token
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # 載入環境變數
 load_dotenv()
 
 # 初始化 DynamoDB table
-print("🔧 正在檢查 DynamoDB table...")
+logger.info("Checking primary DynamoDB table")
 create_table_if_not_exists()
-print("🔧 正在檢查團隊協作 DynamoDB tables...")
+logger.info("Checking team collaboration DynamoDB tables")
 create_team_tables_if_not_exist()
 
 # 初始化 FastAPI
@@ -38,7 +47,9 @@ app = FastAPI(title="FLAC Linebot - Scam Detection System")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # LINE Bot 設定
-CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_ACCESS_TOKEN = validate_line_channel_access_token(
+    os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+)
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 LIFF_URL_TEAM_MANAGEMENT = os.getenv("LIFF_URL_TEAM_MANAGEMENT", "https://liff.line.me/2009609029-RlBZuNs2")
 
@@ -47,6 +58,7 @@ if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
 
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
+rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 # 初始化團隊服務
 team_service = TeamService()
@@ -573,6 +585,14 @@ def handle_text(event):
     """處理文字訊息（整合團隊積分）"""
     user_text = event.message.text
     user_id = event.source.user_id
+
+    if not rate_limiter.allow_request(user_id):
+        reply_message(
+            event.reply_token,
+            "⏳ 通報過於頻繁，請稍候再試。每位使用者每分鐘最多可提交 10 次通報。"
+        )
+        logger.warning("Rate limit exceeded: user_id=%s", user_id)
+        return
     
     # 偵測網址
     urls = re.findall(r'https?://[^\s]+', user_text)
@@ -596,12 +616,20 @@ def handle_text(event):
     
     # 新增：團隊積分計算（僅當訊息包含 URL 時）
     team_result = None
+    mass_report_context = None
     if urls:
         team_result = update_team_points_for_report(
             reporter_uid=user_id,
             url=urls[0],  # 取第一個 URL
             risk_score=analysis_result['risk_score'],
             category=analysis_result['category']
+        )
+        mass_report_context = build_mass_report_context(
+            reporter_uid=user_id,
+            url=urls[0],
+            risk_score=analysis_result['risk_score'],
+            category=analysis_result['category'],
+            team_result=team_result
         )
     
     # 修改回覆訊息，加入團隊積分資訊
@@ -611,6 +639,9 @@ def handle_text(event):
         reply_text = format_reply_message(analysis_result)
     
     reply_message(event.reply_token, reply_text)
+
+    if mass_report_context:
+        trigger_mass_report_check(**mass_report_context)
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image(event):
@@ -631,6 +662,81 @@ def handle_image(event):
         reply_message(event.reply_token, "✅ 已接收圖片！\n\n目前系統專注於文字詐騙分析，圖片分析功能即將推出。")
 
 # ==================== 輔助函數 ====================
+
+def save_scam_report(reporter_uid: str, url: str, normalized_url: str, risk_score: int, category: str) -> dict:
+    """為非團隊使用者寫入 ScamReports 記錄。"""
+    scam_reports_table = dynamodb.Table('ScamReports')
+    now = datetime.now()
+    report_id = f"{reporter_uid}#{now.isoformat()}"
+
+    scam_reports_table.put_item(
+        Item={
+            'report_id': report_id,
+            'url': url,
+            'normalized_url': normalized_url,
+            'reporter_uid': reporter_uid,
+            'team_id': None,
+            'risk_score': risk_score,
+            'category': category,
+            'multiplier_applied': False,
+            'points_earned': 0,
+            'reported_at': now.isoformat()
+        }
+    )
+
+    return {
+        'success': True,
+        'points_earned': 0,
+        'is_duplicate': False,
+        'multiplier_applied': False,
+        'normalized_url': normalized_url,
+        'report_id': report_id,
+        'message': '成功通報，已記錄至系統'
+    }
+
+
+def build_mass_report_context(reporter_uid: str, url: str, risk_score: int, category: str, team_result: dict | None) -> dict | None:
+    """建立大量通報檢查所需的上下文。"""
+    normalized_url = team_result.get('normalized_url') if team_result else None
+
+    if team_result and normalized_url and team_result.get('report_id') and not team_result.get('is_duplicate'):
+        return {'normalized_url': normalized_url}
+
+    if team_result and team_result.get('is_duplicate'):
+        return None
+
+    if team_result:
+        return None
+
+    from points_calculator import PointsCalculator
+
+    calculator = PointsCalculator()
+    normalized_url = calculator.normalize_url(url)
+    save_scam_report(
+        reporter_uid=reporter_uid,
+        url=url,
+        normalized_url=normalized_url,
+        risk_score=risk_score,
+        category=category
+    )
+    return {'normalized_url': normalized_url}
+
+
+def trigger_mass_report_check(normalized_url: str) -> None:
+    """非阻塞觸發大量通報檢查。"""
+    current_report_count = get_report_count(normalized_url)
+
+    def _run_mass_report() -> None:
+        try:
+            result = process_mass_report(
+                normalized_url=normalized_url,
+                current_report_count=current_report_count
+            )
+            logger.info("Mass report background processing completed: result=%s", result)
+        except Exception as e:
+            logger.exception("Mass report background processing failed: error=%s", e)
+
+    threading.Thread(target=_run_mass_report, daemon=True).start()
 
 def update_team_points_for_report(reporter_uid: str, url: str, risk_score: int, category: str) -> dict:
     """

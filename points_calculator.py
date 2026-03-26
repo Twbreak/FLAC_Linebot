@@ -37,7 +37,8 @@ class PointsCalculator:
         Returns:
             True 如果 URL 已被通報，False 否則
         """
-        from database import dynamodb
+        from database import get_dynamodb_resource
+        dynamodb = get_dynamodb_resource()
         
         # 取得 ScamReports 表
         scam_reports_table = dynamodb.Table('ScamReports')
@@ -91,8 +92,9 @@ class PointsCalculator:
                 'report_id': str (如果成功)
             }
         """
-        from database import dynamodb
+        from database import get_dynamodb_resource
         from datetime import datetime
+        dynamodb = get_dynamodb_resource()
         
         # 1. 標準化 URL
         normalized_url = self.normalize_url(url)
@@ -228,8 +230,9 @@ class PointsCalculator:
                 'message': str            # 結果訊息
             }
         """
-        from database import dynamodb
+        from database import get_dynamodb_resource
         from datetime import datetime, timezone
+        dynamodb = get_dynamodb_resource()
 
         # 取得今日日期（UTC）
         today = datetime.now(timezone.utc).date()
@@ -337,4 +340,3 @@ class PointsCalculator:
                 'daily_report_count': daily_report_count,
                 'error': f'更新任務獎勵失敗: {str(e)}'
             }
-

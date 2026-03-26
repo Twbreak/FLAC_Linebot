@@ -6,6 +6,7 @@
 from fastapi.testclient import TestClient
 from main import app
 import uuid
+from urllib.parse import urlparse, parse_qs, unquote
 
 client = TestClient(app)
 
@@ -42,10 +43,15 @@ def test_create_team_success():
     except ValueError:
         raise AssertionError("team_id 不是有效的 UUID 格式")
     
-    # 驗證 invite_url 包含必要參數
-    assert "team_id=" in data["invite_url"]
-    assert "signature=" in data["invite_url"]
+    # 驗證 invite_url 為 LIFF URL，且 team_id / signature 透過 liff.state 傳遞
     assert "liff.line.me" in data["invite_url"]
+    parsed_url = urlparse(data["invite_url"])
+    query = parse_qs(parsed_url.query)
+    assert "liff.state" in query
+
+    decoded_state = unquote(query["liff.state"][0])
+    assert "team_id=" in decoded_state
+    assert "signature=" in decoded_state
     
     print("✅ 測試通過")
 

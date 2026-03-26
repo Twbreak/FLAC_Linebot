@@ -6,6 +6,7 @@
 
 import uuid
 import os
+from urllib.parse import urlparse, parse_qs, unquote
 from team_service import TeamService
 from database import create_team_tables_if_not_exist
 from security import SecurityService
@@ -49,19 +50,20 @@ def test_invite_member_success():
     # 驗證 URL 格式
     assert invite_url is not None, "邀請連結不應為 None"
     assert invite_url.startswith("https://liff.line.me/"), "邀請連結應以 https://liff.line.me/ 開頭"
-    assert f"team_id={team.team_id}" in invite_url, "邀請連結應包含 team_id 參數"
-    assert "signature=" in invite_url, "邀請連結應包含 signature 參數"
-    
-    # 解析 URL 參數
-    from urllib.parse import urlparse, parse_qs
     parsed_url = urlparse(invite_url)
     query_params = parse_qs(parsed_url.query)
-    
-    assert 'team_id' in query_params, "URL 應包含 team_id 參數"
-    assert 'signature' in query_params, "URL 應包含 signature 參數"
-    
-    url_team_id = query_params['team_id'][0]
-    url_signature = query_params['signature'][0]
+    assert 'liff.state' in query_params, "URL 應包含 liff.state 參數"
+
+    decoded_state = unquote(query_params['liff.state'][0])
+    assert f"team_id={team.team_id}" in decoded_state, "邀請連結應包含 team_id 參數"
+    assert "signature=" in decoded_state, "邀請連結應包含 signature 參數"
+
+    state_params = parse_qs(urlparse(decoded_state).query)
+    assert 'team_id' in state_params, "liff.state 應包含 team_id 參數"
+    assert 'signature' in state_params, "liff.state 應包含 signature 參數"
+
+    url_team_id = state_params['team_id'][0]
+    url_signature = state_params['signature'][0]
     
     print(f"\n🔍 驗證 URL 參數...")
     print(f"   team_id: {url_team_id}")
@@ -172,16 +174,15 @@ def test_invite_member_signature_uniqueness():
     invite_url_1 = team_service.invite_member(team1.team_id, leader_uid_1)
     invite_url_2 = team_service.invite_member(team2.team_id, leader_uid_2)
     
-    # 解析簽章
-    from urllib.parse import urlparse, parse_qs
-    
     parsed_url_1 = urlparse(invite_url_1)
     query_params_1 = parse_qs(parsed_url_1.query)
-    signature_1 = query_params_1['signature'][0]
+    state_params_1 = parse_qs(urlparse(unquote(query_params_1['liff.state'][0])).query)
+    signature_1 = state_params_1['signature'][0]
     
     parsed_url_2 = urlparse(invite_url_2)
     query_params_2 = parse_qs(parsed_url_2.query)
-    signature_2 = query_params_2['signature'][0]
+    state_params_2 = parse_qs(urlparse(unquote(query_params_2['liff.state'][0])).query)
+    signature_2 = state_params_2['signature'][0]
     
     print(f"\n🔍 驗證簽章唯一性...")
     print(f"   團隊 1 簽章: {signature_1}")

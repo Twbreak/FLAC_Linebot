@@ -8,9 +8,17 @@ from fastapi.testclient import TestClient
 from main import app
 from team_service import TeamService
 import uuid
+from urllib.parse import urlparse, parse_qs, unquote
 
 client = TestClient(app)
 team_service = TeamService()
+
+
+def _extract_signature(invite_url: str) -> str:
+    parsed_url = urlparse(invite_url)
+    query = parse_qs(parsed_url.query)
+    decoded_state = unquote(query["liff.state"][0])
+    return parse_qs(urlparse(decoded_state).query)["signature"][0]
 
 
 def test_get_team_info_success():
@@ -84,10 +92,8 @@ def test_get_team_members_with_multiple_members():
     # 產生邀請連結並加入成員
     invite_url = team_service.invite_member(team_id=team.team_id, inviter_uid=leader_uid)
     
-    # 從 URL 提取 signature
-    import re
-    match = re.search(r'signature=([^&]+)', invite_url)
-    signature = match.group(1) if match else ""
+    # 從 LIFF URL 提取 signature
+    signature = _extract_signature(invite_url)
     
     # 加入第二個成員
     member_uid = f"U_test_{uuid.uuid4().hex[:8]}"

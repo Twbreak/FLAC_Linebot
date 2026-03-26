@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Literal
 from datetime import datetime
+import uuid
 
 class ScamDetectionRecord(BaseModel):
     """詐騙偵測記錄"""
@@ -79,6 +80,18 @@ class ScamReport(BaseModel):
     multiplier_applied: bool = False
     points_earned: int
     reported_at: datetime
+    is_mass_reported: bool = False
+    mass_report_alert_id: Optional[str] = None
+    
+    @field_validator('mass_report_alert_id')
+    @classmethod
+    def validate_mass_report_alert_id(cls, v: Optional[str], info) -> Optional[str]:
+        """驗證當 is_mass_reported 為 True 時，mass_report_alert_id 不可為 None"""
+        # Get is_mass_reported from the data being validated
+        is_mass_reported = info.data.get('is_mass_reported', False)
+        if is_mass_reported and v is None:
+            raise ValueError('mass_report_alert_id must not be None when is_mass_reported is True')
+        return v
     
     class Config:
         json_encoders = {
@@ -106,3 +119,39 @@ class TeamLeaderboard(BaseModel):
     total_points: int
     report_count: int
     member_count: int
+
+# ==================== Mass Report Notification Models ====================
+
+class MassReportAlert(BaseModel):
+    """大量通報警示記錄"""
+    alert_id: str
+    normalized_url: str
+    report_count: int
+    alert_summary: str
+    alert_warning: str
+    notified_user_count: int
+    created_at: datetime
+    status: Literal["pending", "processing", "completed", "failed"]
+    
+    @field_validator('alert_id')
+    @classmethod
+    def validate_alert_id(cls, v: str) -> str:
+        """驗證 alert_id 必須為有效的 UUID 格式"""
+        try:
+            uuid.UUID(v)
+        except ValueError:
+            raise ValueError('alert_id must be a valid UUID format')
+        return v
+    
+    @field_validator('report_count')
+    @classmethod
+    def validate_report_count(cls, v: int) -> int:
+        """驗證 report_count 必須 >= 10"""
+        if v < 10:
+            raise ValueError('report_count must be greater than or equal to 10')
+        return v
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

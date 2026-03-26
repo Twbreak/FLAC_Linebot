@@ -3,7 +3,8 @@
 """
 
 import pytest
-from security import SecurityService
+from datetime import datetime, timedelta
+from security import SecurityService, RateLimiter, validate_line_channel_access_token
 
 
 def test_security_service_initialization():
@@ -90,6 +91,40 @@ def test_different_team_ids_different_signatures():
     
     # 簽章應該不同
     assert signature1 != signature2
+
+
+def test_validate_line_channel_access_token_rejects_placeholder():
+    """測試 LINE token placeholder 會被拒絕"""
+    with pytest.raises(ValueError):
+        validate_line_channel_access_token("LINE_CHANNEL_ACCESS_TOKEN")
+
+
+def test_validate_line_channel_access_token_accepts_env_value():
+    """測試有效 LINE token 會通過驗證"""
+    token = validate_line_channel_access_token("real-token-from-env")
+    assert token == "real-token-from-env"
+
+
+def test_rate_limiter_blocks_requests_over_limit_within_window():
+    """測試每分鐘超過 10 次請求會被阻擋"""
+    limiter = RateLimiter(max_requests=10, window_seconds=60)
+    start = datetime(2026, 1, 1, 0, 0, 0)
+
+    for i in range(10):
+        assert limiter.allow_request("U123", now=start + timedelta(seconds=i)) is True
+
+    assert limiter.allow_request("U123", now=start + timedelta(seconds=30)) is False
+
+
+def test_rate_limiter_allows_requests_after_window_expires():
+    """測試超過時間窗口後可再次請求"""
+    limiter = RateLimiter(max_requests=2, window_seconds=60)
+    start = datetime(2026, 1, 1, 0, 0, 0)
+
+    assert limiter.allow_request("U123", now=start) is True
+    assert limiter.allow_request("U123", now=start + timedelta(seconds=1)) is True
+    assert limiter.allow_request("U123", now=start + timedelta(seconds=2)) is False
+    assert limiter.allow_request("U123", now=start + timedelta(seconds=61)) is True
 
 
 if __name__ == "__main__":

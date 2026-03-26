@@ -4,14 +4,24 @@
 
 from team_service import TeamService
 from datetime import datetime
+import uuid
+from urllib.parse import urlparse, parse_qs, unquote
+
+
+def _extract_signature_from_invite_url(invite_url: str) -> str:
+    parsed_url = urlparse(invite_url)
+    query = parse_qs(parsed_url.query)
+    decoded_state = unquote(query["liff.state"][0])
+    return parse_qs(urlparse(decoded_state).query)["signature"][0]
 
 
 def test_get_team_info_success():
     """測試成功取得團隊資訊"""
     service = TeamService()
+    leader_uid = f"U_TEST_INFO_{uuid.uuid4().hex[:8]}"
     
     # 建立測試團隊
-    team = service.create_team("U_TEST_INFO_001", "測試團隊資訊")
+    team = service.create_team(leader_uid, "測試團隊資訊")
     team_id = team.team_id
     
     # 查詢團隊資訊
@@ -21,7 +31,7 @@ def test_get_team_info_success():
     assert retrieved_team is not None
     assert retrieved_team.team_id == team_id
     assert retrieved_team.team_name == "測試團隊資訊"
-    assert retrieved_team.leader_uid == "U_TEST_INFO_001"
+    assert retrieved_team.leader_uid == leader_uid
     assert retrieved_team.total_points == 0
     assert retrieved_team.member_count == 1
     assert isinstance(retrieved_team.created_at, datetime)
@@ -46,9 +56,10 @@ def test_get_team_info_not_found():
 def test_get_team_members_single_member():
     """測試取得團隊成員清單（僅隊長）"""
     service = TeamService()
+    leader_uid = f"U_TEST_MEMBERS_{uuid.uuid4().hex[:8]}"
     
     # 建立測試團隊
-    team = service.create_team("U_TEST_MEMBERS_001", "測試成員清單")
+    team = service.create_team(leader_uid, "測試成員清單")
     team_id = team.team_id
     
     # 查詢成員清單
@@ -56,7 +67,7 @@ def test_get_team_members_single_member():
     
     # 驗證
     assert len(members) == 1
-    assert members[0].line_uid == "U_TEST_MEMBERS_001"
+    assert members[0].line_uid == leader_uid
     assert members[0].team_id == team_id
     assert members[0].contribution_points == 0
     assert members[0].report_count == 0
@@ -69,18 +80,21 @@ def test_get_team_members_single_member():
 def test_get_team_members_multiple_members():
     """測試取得團隊成員清單（多位成員）"""
     service = TeamService()
+    leader_uid = f"U_TEST_MULTI_{uuid.uuid4().hex[:8]}"
+    member_uid_1 = f"U_TEST_MULTI_{uuid.uuid4().hex[:8]}"
+    member_uid_2 = f"U_TEST_MULTI_{uuid.uuid4().hex[:8]}"
     
     # 建立測試團隊
-    team = service.create_team("U_TEST_MULTI_001", "測試多位成員")
+    team = service.create_team(leader_uid, "測試多位成員")
     team_id = team.team_id
     
     # 產生邀請連結
-    invite_url = service.invite_member(team_id, "U_TEST_MULTI_001")
-    signature = invite_url.split("signature=")[1]
+    invite_url = service.invite_member(team_id, leader_uid)
+    signature = _extract_signature_from_invite_url(invite_url)
     
     # 加入多位成員
-    service.join_team(team_id, "U_TEST_MULTI_002", signature)
-    service.join_team(team_id, "U_TEST_MULTI_003", signature)
+    service.join_team(team_id, member_uid_1, signature)
+    service.join_team(team_id, member_uid_2, signature)
     
     # 查詢成員清單
     members = service.get_team_members(team_id)
@@ -90,14 +104,14 @@ def test_get_team_members_multiple_members():
     
     # 驗證成員 UID
     member_uids = [m.line_uid for m in members]
-    assert "U_TEST_MULTI_001" in member_uids
-    assert "U_TEST_MULTI_002" in member_uids
-    assert "U_TEST_MULTI_003" in member_uids
+    assert leader_uid in member_uids
+    assert member_uid_1 in member_uids
+    assert member_uid_2 in member_uids
     
     # 驗證隊長標記
     leaders = [m for m in members if m.is_leader]
     assert len(leaders) == 1
-    assert leaders[0].line_uid == "U_TEST_MULTI_001"
+    assert leaders[0].line_uid == leader_uid
     
     print(f"✅ 成功取得多位成員清單: {len(members)} 位成員")
 
@@ -118,33 +132,36 @@ def test_get_team_members_empty_team():
 def test_get_team_members_sorted_by_contribution():
     """測試成員清單依 contribution_points 降序排序"""
     service = TeamService()
+    leader_uid = f"U_TEST_SORT_{uuid.uuid4().hex[:8]}"
+    member_uid_1 = f"U_TEST_SORT_{uuid.uuid4().hex[:8]}"
+    member_uid_2 = f"U_TEST_SORT_{uuid.uuid4().hex[:8]}"
     
     # 建立測試團隊
-    team = service.create_team("U_TEST_SORT_001", "測試排序")
+    team = service.create_team(leader_uid, "測試排序")
     team_id = team.team_id
     
     # 產生邀請連結
-    invite_url = service.invite_member(team_id, "U_TEST_SORT_001")
-    signature = invite_url.split("signature=")[1]
+    invite_url = service.invite_member(team_id, leader_uid)
+    signature = _extract_signature_from_invite_url(invite_url)
     
     # 加入成員
-    service.join_team(team_id, "U_TEST_SORT_002", signature)
-    service.join_team(team_id, "U_TEST_SORT_003", signature)
+    service.join_team(team_id, member_uid_1, signature)
+    service.join_team(team_id, member_uid_2, signature)
     
     # 手動更新成員積分（模擬通報）
     from decimal import Decimal
     service.team_members_table.update_item(
-        Key={'member_id': f"{team_id}#U_TEST_SORT_001"},
+        Key={'member_id': f"{team_id}#{leader_uid}"},
         UpdateExpression='SET contribution_points = :points',
         ExpressionAttributeValues={':points': Decimal('100')}
     )
     service.team_members_table.update_item(
-        Key={'member_id': f"{team_id}#U_TEST_SORT_002"},
+        Key={'member_id': f"{team_id}#{member_uid_1}"},
         UpdateExpression='SET contribution_points = :points',
         ExpressionAttributeValues={':points': Decimal('250')}
     )
     service.team_members_table.update_item(
-        Key={'member_id': f"{team_id}#U_TEST_SORT_003"},
+        Key={'member_id': f"{team_id}#{member_uid_2}"},
         UpdateExpression='SET contribution_points = :points',
         ExpressionAttributeValues={':points': Decimal('150')}
     )
@@ -154,11 +171,11 @@ def test_get_team_members_sorted_by_contribution():
     
     # 驗證排序（降序）
     assert len(members) == 3
-    assert members[0].line_uid == "U_TEST_SORT_002"  # 250 分
+    assert members[0].line_uid == member_uid_1  # 250 分
     assert members[0].contribution_points == 250
-    assert members[1].line_uid == "U_TEST_SORT_003"  # 150 分
+    assert members[1].line_uid == member_uid_2  # 150 分
     assert members[1].contribution_points == 150
-    assert members[2].line_uid == "U_TEST_SORT_001"  # 100 分
+    assert members[2].line_uid == leader_uid  # 100 分
     assert members[2].contribution_points == 100
     
     print("✅ 成員清單正確依 contribution_points 降序排序")
