@@ -597,6 +597,7 @@ def handle_text(event):
     # 偵測網址
     urls = re.findall(r'https?://[^\s]+', user_text)
     msg_type = "url" if urls else "text"
+    user_team = get_user_team_membership(user_id)
     
     print(f"[收到訊息] User: {user_id}, Type: {msg_type}, Content: {user_text[:50]}...")
     
@@ -633,10 +634,18 @@ def handle_text(event):
         )
     
     # 修改回覆訊息，加入團隊積分資訊
-    if team_result and team_result.get('points_earned', 0) > 0:
+    if team_result and (
+        team_result.get('points_earned', 0) > 0
+        or team_result.get('is_duplicate')
+        or team_result.get('error')
+    ):
         reply_text = format_reply_with_team_points(analysis_result, team_result)
     else:
-        reply_text = format_reply_message(analysis_result)
+        reply_text = format_reply_message(
+            analysis_result,
+            has_team=bool(user_team),
+            team_points_eligible=bool(urls)
+        )
     
     reply_message(event.reply_token, reply_text)
 
@@ -738,6 +747,26 @@ def trigger_mass_report_check(normalized_url: str) -> None:
 
     threading.Thread(target=_run_mass_report, daemon=True).start()
 
+
+def get_user_team_membership(user_id: str) -> dict | None:
+    """查詢使用者是否屬於某個團隊。"""
+    try:
+        response = team_service.team_members_table.query(
+            IndexName='LineUidIndex',
+            KeyConditionExpression='line_uid = :uid',
+            ExpressionAttributeValues={':uid': user_id},
+            Limit=1
+        )
+    except Exception as e:
+        logger.exception("[團隊積分] 查詢使用者團隊失敗: user_id=%s error=%s", user_id, e)
+        return None
+
+    items = response.get('Items', [])
+    if not items:
+        return None
+
+    return items[0]
+
 def update_team_points_for_report(reporter_uid: str, url: str, risk_score: int, category: str) -> dict:
     """
     查詢使用者所屬團隊並更新團隊積分
@@ -755,23 +784,15 @@ def update_team_points_for_report(reporter_uid: str, url: str, risk_score: int, 
     
     try:
         # 查詢使用者所屬團隊（使用 LineUidIndex GSI）
-        team_members_table = team_service.team_members_table
-        response = team_members_table.query(
-            IndexName='LineUidIndex',
-            KeyConditionExpression='line_uid = :uid',
-            ExpressionAttributeValues={':uid': reporter_uid},
-            Limit=1
-        )
+        team_membership = get_user_team_membership(reporter_uid)
         
-        items = response.get('Items', [])
-        
-        if not items:
+        if not team_membership:
             # 使用者不屬於任何團隊，不更新積分
             print(f"[團隊積分] User {reporter_uid} 不屬於任何團隊")
             return None
         
         # 取得團隊 ID
-        team_id = items[0]['team_id']
+        team_id = team_membership['team_id']
         print(f"[團隊積分] User {reporter_uid} 屬於團隊 {team_id}")
         
         # 呼叫 PointsCalculator 更新積分
@@ -798,8 +819,14 @@ def update_team_points_for_report(reporter_uid: str, url: str, risk_score: int, 
         
     except Exception as e:
         # 積分更新失敗不應影響主流程，記錄錯誤但繼續
-        print(f"[團隊積分] 更新失敗: {str(e)}")
-        return None
+        logger.exception("[團隊積分] 更新失敗: reporter_uid=%s error=%s", reporter_uid, e)
+        return {
+            'success': False,
+            'points_earned': 0,
+            'is_duplicate': False,
+            'multiplier_applied': False,
+            'error': f'團隊積分更新失敗: {str(e)}'
+        }
 
 def reply_message(token: str, text: str):
     """回覆 LINE 訊息"""
@@ -812,7 +839,7 @@ def reply_message(token: str, text: str):
             )
         )
 
-def format_reply_message(analysis: dict) -> str:
+def format_reply_message(analysis: dict, has_team: bool = False, team_points_eligible: bool = False) -> str:
     """格式化回覆訊息"""
     score = analysis['risk_score']
     category = analysis['category']
@@ -835,7 +862,16 @@ def format_reply_message(analysis: dict) -> str:
 詐騙類別：{category}
 
 💡 專員警示：
-{warning}
+{warning}"""
+
+    if has_team and not team_points_eligible:
+        reply += """
+
+🏆 團隊積分提醒
+ℹ️ 本次訊息未包含 URL，因此只會記入個人分數，不會累計團隊積分
+"""
+
+    reply += f"""
 
 📊 查看完整分析記錄，請點選下方選單「我的儀表板」
 
@@ -909,6 +945,12 @@ def format_reply_with_team_points(analysis: dict, team_result: dict) -> str:
         reply += """
 🏆 團隊積分更新
 ℹ️ 此 URL 已被通報，未獲得積分
+"""
+    elif team_result.get('error'):
+        reply += f"""
+🏆 團隊積分更新
+⚠️ 本次 URL 已完成個人分析，但團隊積分更新失敗
+原因：{team_result.get('error')}
 """
     
     reply += f"""

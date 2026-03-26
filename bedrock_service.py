@@ -48,6 +48,31 @@ BEDROCK_PROMPT = """
 ## Input Content
 """
 
+def _extract_expert_warning(response_text: str) -> str:
+    """提取專員警示，支援同行與換行條列格式。"""
+    warning_patterns = [
+        r'專員警示[：:]\s*\*?\*?\s*(.+?)(?=\n\s*(?:---|#{1,6}\s|(?:- |\* )?\*\*[^\n]+[：:]|\Z))',
+        r'專員警示[：:]\s*\*?\*?\s*([^\n]+)',
+    ]
+
+    for pattern in warning_patterns:
+        warning_match = re.search(pattern, response_text, re.DOTALL)
+        if not warning_match:
+            continue
+
+        warning_text = warning_match.group(1).strip()
+        warning_lines = []
+        for line in warning_text.splitlines():
+            cleaned_line = re.sub(r'^\s*[-*•]+\s*', '', line).strip()
+            if cleaned_line:
+                warning_lines.append(cleaned_line)
+
+        cleaned_warning = ' '.join(warning_lines).strip('：:')
+        if cleaned_warning and cleaned_warning != '*':
+            return cleaned_warning
+
+    return "請保持警覺"
+
 def parse_bedrock_response(response_text: str) -> Dict:
     """解析 Bedrock 回應，提取結構化資料"""
     
@@ -108,9 +133,7 @@ def parse_bedrock_response(response_text: str) -> Dict:
             result["analysis"] = [p for p in analysis_points if p]
         
         # 提取專員警示
-        warning_match = re.search(r'專員警示[：:]\s*\*?\*?([^\n]+)', response_text)
-        if warning_match:
-            result["expert_warning"] = warning_match.group(1).strip()
+        result["expert_warning"] = _extract_expert_warning(response_text)
         
         # 除錯輸出
         logger.info("Bedrock response parsed: risk_score=%s category=%s", result['risk_score'], result['category'])

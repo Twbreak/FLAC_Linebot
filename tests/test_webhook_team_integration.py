@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from main import (
     update_team_points_for_report,
     format_reply_with_team_points,
+    format_reply_message,
     build_mass_report_context,
     handle_text,
     trigger_mass_report_check,
@@ -286,6 +287,48 @@ class TestWebhookTeamIntegration:
         assert '7 積分' in reply
         assert '🎉 每日任務完成！' not in reply  # 不應包含任務完成通知
         assert '50 點獎勵積分' not in reply
+
+    def test_format_reply_message_shows_team_notice_when_message_has_no_url(self):
+        """測試有團隊但未附 URL 時，回覆會明確說明不累計團隊積分"""
+        analysis = {
+            'risk_score': 5,
+            'category': '可疑訊息',
+            'analysis': '這是一個需要小心的訊息',
+            'expert_warning': '請勿提供個人資料'
+        }
+
+        reply = format_reply_message(
+            analysis,
+            has_team=True,
+            team_points_eligible=False
+        )
+
+        assert '團隊積分提醒' in reply
+        assert '未包含 URL' in reply
+        assert '只會記入個人分數' in reply
+
+    def test_format_reply_with_team_points_shows_error_when_team_update_failed(self):
+        """測試團隊積分更新失敗時，回覆不再靜默降級"""
+        analysis = {
+            'risk_score': 8,
+            'category': '假投資詐騙',
+            'analysis': '這是一個高風險的詐騙網站',
+            'expert_warning': '請勿點擊連結或提供個人資訊'
+        }
+
+        team_result = {
+            'success': False,
+            'points_earned': 0,
+            'is_duplicate': False,
+            'multiplier_applied': False,
+            'error': '團隊積分更新失敗: TeamMembers update failed'
+        }
+
+        reply = format_reply_with_team_points(analysis, team_result)
+
+        assert '團隊積分更新失敗' in reply
+        assert '個人分析' in reply
+        assert 'TeamMembers update failed' in reply
     
     @patch('main.team_service')
     @patch('points_calculator.PointsCalculator')
@@ -416,12 +459,14 @@ class TestWebhookTeamIntegration:
     @patch('main.trigger_mass_report_check')
     @patch('main.build_mass_report_context')
     @patch('main.update_team_points_for_report')
+    @patch('main.get_user_team_membership')
     @patch('main.add_detection_record')
     @patch('main.analyze_scam_content')
     def test_handle_text_replies_before_triggering_mass_report(
         self,
         mock_analyze,
         mock_add_detection_record,
+        mock_get_user_team_membership,
         mock_update_team_points,
         mock_build_context,
         mock_trigger_mass_report_check,
@@ -440,6 +485,7 @@ class TestWebhookTeamIntegration:
             'multiplier_applied': False
         }
         mock_build_context.return_value = {'normalized_url': 'https://scam-site.com/fake'}
+        mock_get_user_team_membership.return_value = {'team_id': 'team123'}
 
         call_order = []
         mock_reply_message.side_effect = lambda *args, **kwargs: call_order.append('reply')
@@ -454,6 +500,38 @@ class TestWebhookTeamIntegration:
 
         assert call_order == ['reply', 'trigger']
         mock_trigger_mass_report_check.assert_called_once_with(normalized_url='https://scam-site.com/fake')
+
+    @patch('main.reply_message')
+    @patch('main.get_user_team_membership')
+    @patch('main.add_detection_record')
+    @patch('main.analyze_scam_content')
+    def test_handle_text_shows_team_notice_for_team_member_without_url(
+        self,
+        mock_analyze,
+        mock_add_detection_record,
+        mock_get_user_team_membership,
+        mock_reply_message
+    ):
+        """測試有團隊的使用者傳送非 URL 訊息時，會收到團隊不計分提醒"""
+        mock_analyze.return_value = {
+            'risk_score': 4,
+            'category': '可疑訊息',
+            'analysis': ['測試分析'],
+            'expert_warning': '請勿提供個資'
+        }
+        mock_get_user_team_membership.return_value = {'team_id': 'team123'}
+
+        event = Mock()
+        event.message.text = '這段訊息感覺很可疑'
+        event.source.user_id = 'U1234567890'
+        event.reply_token = 'reply-token'
+
+        handle_text(event)
+
+        mock_reply_message.assert_called_once()
+        reply_text = mock_reply_message.call_args.args[1]
+        assert '團隊積分提醒' in reply_text
+        assert '未包含 URL' in reply_text
 
     @patch('main.reply_message')
     @patch('main.rate_limiter')
