@@ -10,3 +10,5 @@ scam_detection_db.json
 # Keep .kiro folder but ignore some files
 .kiro/settings/
 .kiro/hooks/
+
+logs/

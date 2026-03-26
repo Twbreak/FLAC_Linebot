@@ -6,10 +6,67 @@
     <title>Scam Hero Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <style>
         .table-container {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
+        }
+        .dashboard-action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+        .dashboard-action-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 3rem;
+            padding: 0.75rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+        .dashboard-action-link:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+            filter: brightness(0.98);
+        }
+        .history-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 1rem;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+            padding: 1rem;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        }
+        .history-card + .history-card {
+            margin-top: 0.9rem;
+        }
+        .markdown-content p + p,
+        .markdown-content ul + p,
+        .markdown-content p + ul {
+            margin-top: 0.5rem;
+        }
+        .markdown-content ul {
+            list-style: disc;
+            padding-left: 1.25rem;
+        }
+        .markdown-content li + li {
+            margin-top: 0.25rem;
+        }
+        .markdown-content strong {
+            font-weight: 700;
+            color: #1f2937;
+        }
+        @media (min-width: 640px) {
+            .dashboard-action-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
         }
         .full-display-cell {
             word-break: break-word;
@@ -60,51 +117,53 @@
     <!-- 主要內容 -->
     <div id="main-content" class="hidden">
         <div class="bg-white shadow-lg rounded-2xl p-4 sm:p-6 w-full max-w-5xl mx-auto">
-            <h1 class="text-2xl font-bold text-blue-600 mb-4 text-center">Scam Hero Dashboard</h1>
+            <h1 class="text-xl sm:text-2xl font-bold text-blue-600 mb-4 text-center">Scam Hero Dashboard</h1>
             
-            <div id="user-info" class="flex items-center space-x-4 mb-6 p-3 bg-blue-50 rounded-lg">
-                <img id="user-avatar" class="w-16 h-16 rounded-full border-2 border-blue-200" src="" alt="Avatar">
-                <div>
+            <div id="user-info" class="flex flex-col items-center text-center sm:flex-row sm:items-center sm:text-left gap-3 sm:gap-4 mb-6 p-4 bg-blue-50 rounded-xl">
+                <img id="user-avatar" class="w-20 h-20 sm:w-16 sm:h-16 rounded-full border-2 border-blue-200 shrink-0" src="" alt="Avatar">
+                <div class="min-w-0">
                     <p class="text-gray-500 text-sm">Welcome back,</p>
-                    <p id="user-name" class="font-bold text-lg text-gray-800">Loading...</p>
-                    <p id="display-user-id" class="text-[10px] text-gray-400 font-mono"></p>
+                    <p id="user-name" class="font-bold text-lg sm:text-xl text-gray-800 break-words">Loading...</p>
+                    <p id="display-user-id" class="text-[10px] sm:text-xs text-gray-400 font-mono break-all"></p>
                 </div>
             </div>
 
-            <div class="grid grid-cols-3 gap-4 mb-8">
+            <div class="grid grid-cols-3 gap-2 sm:gap-4 mb-8">
                 <div class="text-center p-3 bg-gray-50 rounded-xl">
                     <p class="text-gray-500 text-xs uppercase font-bold">Total Scams</p>
-                    <p id="user-score" class="text-3xl font-black text-blue-500">0</p>
+                    <p id="user-score" class="text-2xl sm:text-3xl font-black text-blue-500">0</p>
                 </div>
                 <div class="text-center p-3 bg-yellow-50 rounded-xl border border-yellow-100">
                     <p class="text-gray-500 text-xs uppercase font-bold">Total Points</p>
-                    <p id="total-points" class="text-3xl font-black text-yellow-500">0</p>
+                    <p id="total-points" class="text-2xl sm:text-3xl font-black text-yellow-500">0</p>
                 </div>
                 <div class="text-center p-3 bg-green-50 rounded-xl border border-green-100">
                     <p class="text-gray-500 text-xs uppercase font-bold">Coupons</p>
-                    <p id="coupon-count" class="text-3xl font-black text-green-500">0</p>
+                    <p id="coupon-count" class="text-2xl sm:text-3xl font-black text-green-500">0</p>
                 </div>
             </div>
             
-            <div class="text-right mb-2">
-                <a href="team.html" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+            <div class="dashboard-action-grid mb-6">
+                <a href="team.html" class="dashboard-action-link bg-blue-500 text-white">
                     👥 我的團隊
                 </a>
-                <a href="team-leaderboard.html" class="text-sm bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+                <a href="team-leaderboard.html" class="dashboard-action-link bg-yellow-400 text-white">
                     🏆 團隊排行榜
                 </a>
-                <a href="leaderboard.html" class="text-sm bg-green-400 hover:bg-green-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm mr-2">
+                <a href="leaderboard.html" class="dashboard-action-link bg-green-400 text-white">
                     📊 個人排行榜
                 </a>
-                <a href="trends.html" class="text-sm bg-red-400 hover:bg-red-500 text-white font-bold py-1 px-3 rounded-full transition shadow-sm">
+                <a href="trends.html" class="dashboard-action-link bg-red-400 text-white">
                     🗺️ 趨勢地圖
                 </a>
             </div>
 
             <div class="space-y-4">
-                <h2 class="font-bold text-gray-700 border-b pb-2">Detection History Table</h2>
+                <h2 class="text-xl sm:text-2xl font-bold text-gray-700 border-b pb-2">Detection History Table</h2>
                 
-                <div class="table-container border rounded-xl">
+                <div id="history-card-list" class="md:hidden"></div>
+
+                <div class="hidden md:block table-container border rounded-xl">
                     <table class="min-w-full divide-y divide-gray-200 text-sm text-left">
                         <thead class="bg-gray-50">
                             <tr>
@@ -196,10 +255,13 @@
                 console.log(`取得 ${data.length} 筆記錄`);
                 
                 const tableBody = document.getElementById('history-table-body');
+                const cardList = document.getElementById('history-card-list');
                 tableBody.innerHTML = ''; 
+                cardList.innerHTML = '';
 
                 if (data.length === 0) {
                     tableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400">📭 尚無偵測記錄<br><small class="text-xs">傳送訊息給 Bot 開始使用</small></td></tr>';
+                    cardList.innerHTML = '<div class="history-card text-center text-gray-400">📭 尚無偵測記錄<br><small class="text-xs">傳送訊息給 Bot 開始使用</small></div>';
                     return;
                 }
 
@@ -208,6 +270,10 @@
 
                 data.forEach(item => {
                     const score = parseInt(item.risk_score) || 0;
+                    const timestamp = formatTimestamp(item.created_at || item.timestamp);
+                    const category = item.category || 'Uncategorized';
+                    const content = item.input_content || 'Image/File';
+                    const warning = item.expert_warning || 'None';
                     totalPoints += score;
                     if (score >= 8) {
                         coupons += 1;
@@ -215,18 +281,19 @@
 
                     const row = document.createElement('tr');
                     row.className = "hover:bg-blue-50/50 transition-colors";
-                    const scoreColor = score >= 7 ? 'text-red-600' : (score >= 4 ? 'text-orange-500' : 'text-green-600');
+                    const scoreColor = getScoreColor(score);
+                    const scoreBadge = getScoreBadge(score);
                     let analysisText = Array.isArray(item.analysis) ? item.analysis.join('; ') : (item.analysis || 'N/A');
 
                     row.innerHTML = `
                         <td class="px-4 py-3 whitespace-nowrap text-gray-500 text-[11px]">
-                            ${new Date(item.created_at || item.timestamp).toLocaleString('zh-TW')}
+                            ${timestamp}
                         </td>
                         <td class="px-4 py-3 whitespace-nowrap">
-                            <span class="px-2 py-0.5 rounded-full text-[10px] bg-white border font-medium">${item.category || 'Uncategorized'}</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] bg-white border font-medium">${category}</span>
                         </td>
                         <td class="px-4 py-3 text-gray-700 text-xs leading-relaxed full-display-cell">
-                            ${escapeHtml(item.input_content || 'Image/File')}
+                            ${escapeHtml(content)}
                         </td>
                         <td class="px-4 py-3 font-black ${scoreColor} whitespace-nowrap">
                             ${score}/10
@@ -235,10 +302,42 @@
                             ${escapeHtml(analysisText)}
                         </td>
                         <td class="px-4 py-3 text-gray-600 text-[11px] leading-relaxed full-display-cell">
-                            ${escapeHtml(item.expert_warning || 'None')}
+                            ${escapeHtml(warning)}
                         </td>
                     `;
                     tableBody.appendChild(row);
+
+                    const card = document.createElement('article');
+                    card.className = "history-card";
+                    card.innerHTML = `
+                        <div class="flex items-start justify-between gap-3 mb-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">Timestamp</p>
+                                <p class="text-sm text-gray-700 leading-snug">${timestamp}</p>
+                            </div>
+                            <div class="shrink-0 ${scoreBadge}">
+                                ${score}/10
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-700">${category}</span>
+                        </div>
+                        <div class="space-y-3">
+                            <section>
+                                <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Content</p>
+                                <p class="text-sm text-gray-700 leading-relaxed break-words">${escapeHtml(content)}</p>
+                            </section>
+                            <section>
+                                <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Analysis</p>
+                                <div class="markdown-content text-sm text-gray-600 leading-relaxed break-words">${renderMarkdown(analysisText)}</div>
+                            </section>
+                            <section>
+                                <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Warning</p>
+                                <p class="text-sm text-gray-600 leading-relaxed break-words">${escapeHtml(warning)}</p>
+                            </section>
+                        </div>
+                    `;
+                    cardList.appendChild(card);
                 });
 
                 document.getElementById('user-score').textContent = data.length;
@@ -249,7 +348,44 @@
                 console.error("無法取得歷史記錄:", error);
                 document.getElementById('history-table-body').innerHTML = 
                     '<tr><td colspan="6" class="px-4 py-10 text-center text-red-400">❌ 連線錯誤<br><small class="text-xs">' + error.message + '</small></td></tr>';
+                document.getElementById('history-card-list').innerHTML =
+                    '<div class="history-card text-center text-red-400">❌ 連線錯誤<br><small class="text-xs">' + escapeHtml(error.message) + '</small></div>';
             }
+        }
+
+        function formatTimestamp(value) {
+            return new Date(value).toLocaleString('zh-TW');
+        }
+
+        function getScoreColor(score) {
+            return score >= 7 ? 'text-red-600' : (score >= 4 ? 'text-orange-500' : 'text-green-600');
+        }
+
+        function getScoreBadge(score) {
+            if (score >= 7) {
+                return 'rounded-full px-3 py-1 text-sm font-black bg-red-50 text-red-600 border border-red-100';
+            }
+            if (score >= 4) {
+                return 'rounded-full px-3 py-1 text-sm font-black bg-orange-50 text-orange-500 border border-orange-100';
+            }
+            return 'rounded-full px-3 py-1 text-sm font-black bg-green-50 text-green-600 border border-green-100';
+        }
+
+        function renderMarkdown(text) {
+            const source = String(text || '').trim();
+            if (!source) {
+                return '<p>N/A</p>';
+            }
+
+            if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+                const rawHtml = marked.parse(source, {
+                    breaks: true,
+                    gfm: true
+                });
+                return DOMPurify.sanitize(rawHtml);
+            }
+
+            return escapeHtml(source).replace(/\n/g, '<br>');
         }
 
         function handleLogout() {
