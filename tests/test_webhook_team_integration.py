@@ -18,6 +18,7 @@ from main import (
     build_mass_report_context,
     handle_text,
     trigger_mass_report_check,
+    save_scam_report,
 )
 
 
@@ -428,6 +429,26 @@ class TestWebhookTeamIntegration:
             risk_score=8,
             category='假投資詐騙'
         )
+
+    @patch('main.dynamodb')
+    def test_save_scam_report_omits_team_id_for_non_team_users(self, mock_dynamodb):
+        """測試非團隊通報寫入 ScamReports 時不帶 team_id 欄位"""
+        mock_table = Mock()
+        mock_dynamodb.Table.return_value = mock_table
+
+        save_scam_report(
+            reporter_uid='U1234567890',
+            url='https://scam-site.com/fake?ref=1',
+            normalized_url='https://scam-site.com/fake',
+            risk_score=8,
+            category='假投資詐騙'
+        )
+
+        mock_table.put_item.assert_called_once()
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['reporter_uid'] == 'U1234567890'
+        assert item['normalized_url'] == 'https://scam-site.com/fake'
+        assert 'team_id' not in item
 
     @patch('main.threading.Thread')
     @patch('main.process_mass_report')
