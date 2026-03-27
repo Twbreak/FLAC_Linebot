@@ -681,19 +681,20 @@ def save_scam_report(reporter_uid: str, url: str, normalized_url: str, risk_scor
     now = datetime.now()
     report_id = f"{reporter_uid}#{now.isoformat()}"
 
+    item = {
+        'report_id': report_id,
+        'url': url,
+        'normalized_url': normalized_url,
+        'reporter_uid': reporter_uid,
+        'risk_score': risk_score,
+        'category': category,
+        'multiplier_applied': False,
+        'points_earned': 0,
+        'reported_at': now.isoformat()
+    }
+
     scam_reports_table.put_item(
-        Item={
-            'report_id': report_id,
-            'url': url,
-            'normalized_url': normalized_url,
-            'reporter_uid': reporter_uid,
-            'team_id': None,
-            'risk_score': risk_score,
-            'category': category,
-            'multiplier_applied': False,
-            'points_earned': 0,
-            'reported_at': now.isoformat()
-        }
+        Item=item
     )
 
     return {
